@@ -5,6 +5,7 @@ Shares library.db with the console app. Standard library only.
     python portal.py          ->  http://localhost:8100
 """
 import json
+import os
 import sqlite3
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 import library  # reuse connect() / reset_database()
 
 HERE = Path(__file__).resolve().parent
-PORT = 8100
+PORT = int(os.environ.get("PORT", 8100))
 
 
 def rows(conn, sql, args=()):
@@ -181,6 +182,6 @@ if __name__ == "__main__":
         library.reset_database()
     print(f"Library portal on http://localhost:{PORT}  (Ctrl+C to stop)")
     try:
-        ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+        ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
     except KeyboardInterrupt:
         pass
