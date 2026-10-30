@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Athenaeum Library Portal</title>
+<style>
+  :root{--paper:#f7f1e3;--ink:#2b2118;--navy:#1e3a5f;--maroon:#7a1f2b;--gold:#b08d3c;--muted:#7c6f60;--line:#e2d6bd}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 "Palatino Linotype","Book Antiqua",Palatino,Georgia,serif}
+  aside{position:fixed;inset:0 auto 0 0;width:220px;background:var(--navy);color:#e8dfc8;padding:26px 18px}
+  aside h1{font-size:22px;margin:0 0 2px;color:#fff;letter-spacing:.5px}
+  aside small{color:var(--gold);font-variant:small-caps;letter-spacing:1px}
+  aside nav{margin-top:30px;display:flex;flex-direction:column;gap:4px}
+  aside button{all:unset;cursor:pointer;padding:9px 12px;border-radius:4px;font-size:15px}
+  aside button.on,aside button:hover{background:rgba(255,255,255,.1);color:#fff;border-left:3px solid var(--gold)}
+  main{margin-left:220px;padding:30px 36px;max-width:1100px}
+  h2{font-size:26px;margin:0 0 18px;color:var(--navy);border-bottom:2px solid var(--gold);padding-bottom:6px;display:inline-block}
+  .stats{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:26px}
+  .stat{background:#fff;border:1px solid var(--line);padding:14px 20px;min-width:140px;border-top:4px solid var(--maroon)}
+  .stat b{display:block;font-size:28px;color:var(--maroon)} .stat span{color:var(--muted);font-variant:small-caps}
+  .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:18px}
+  .book{background:#fff;border:1px solid var(--line);display:flex;min-height:150px;box-shadow:2px 3px 0 var(--line)}
+  .spine{width:16px;flex:none}
+  .book div.b{padding:12px 14px;display:flex;flex-direction:column;gap:3px;width:100%}
+  .book .t{font-weight:bold;font-size:15.5px;line-height:1.25}
+  .book .a{color:var(--muted);font-style:italic;font-size:13.5px}
+  .book .m{margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .pill{padding:2px 9px;border-radius:20px;font-size:12px;font-family:system-ui,sans-serif}
+  .ok{background:#e3efe2;color:#2f5d2b}.no{background:#f6e0e0;color:var(--maroon)}
+  input,select{font:inherit;padding:8px 10px;border:1px solid #cdbf9f;background:#fffdf7;border-radius:3px;width:100%}
+  .search{max-width:420px;margin-bottom:20px}
+  .panel{background:#fff;border:1px solid var(--line);padding:20px;margin-bottom:22px}
+  .panel h3{margin:0 0 12px;color:var(--maroon);font-variant:small-caps;letter-spacing:.5px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;align-items:end}
+  label{font-size:13px;color:var(--muted)}
+  .btn{background:var(--maroon);color:#fff;border:0;padding:9px 16px;font:inherit;cursor:pointer;border-radius:3px}
+  .btn.small{padding:4px 10px;font-size:13px}.btn.ghost{background:none;color:var(--maroon);border:1px solid var(--maroon)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-variant:small-caps;color:var(--muted);border-bottom:2px solid var(--line);padding:6px 8px}
+  td{border-bottom:1px solid var(--line);padding:7px 8px}
+  tr.click{cursor:pointer} tr.click:hover{background:#fbf6ea}
+  .late{color:var(--maroon);font-weight:bold}
+  #toast{position:fixed;right:24px;bottom:24px;background:var(--ink);color:#fff;padding:12px 18px;border-radius:4px;display:none;max-width:360px}
+  #toast.err{background:var(--maroon)}
+  @media(max-width:760px){aside{position:static;width:auto}main{margin:0;padding:18px 16px}}
+</style>
+</head>
+<body>
+<aside>
+  <h1>Athenaeum</h1><small>university library</small>
+  <nav>
+    <button data-v="home" class="on">Overview</button>
+    <button data-v="catalogue">Catalogue</button>
+    <button data-v="desk">Circulation Desk</button>
+    <button data-v="members">Members</button>
+    <button data-v="insights">Insights</button>
+  </nav>
+</aside>
+<main id="view"></main>
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const get = u => fetch(u).then(r => r.json());
+async function post(u, body) {
+  const r = await fetch(u, {method: "POST", body: JSON.stringify(body)});
+  const j = await r.json();
+  toast(j.ok || j.error, !r.ok);
+  return r.ok;
+}
+function toast(msg, bad) {
+  const t = $("#toast"); t.textContent = msg; t.className = bad ? "err" : ""; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 3500);
+}
+const SPINES = {"Database":"#1e3a5f","Computer Science":"#2f5d50","Fiction":"#7a1f2b","History":"#8a5a1f","Mathematics":"#4b3f72"};
+
+const views = {
+  async home() {
+    const s = await get("/api/stats");
+    return `<h2>Overview</h2>
+      <div class="stats">
+        ${[["titles","Titles"],["copies","Copies"],["on_loan","On loan"],["overdue","Overdue"],["members","Members"]]
+          .map(([k,l]) => `<div class="stat"><b>${s[k]}</b><span>${l}</span></div>`).join("")}
+        <div class="stat"><b>₹${s.fines_due}</b><span>Fines due</span></div>
+      </div>
+      <div class="panel"><h3>Most borrowed</h3><table><tr><th>Title</th><th>Loans</th></tr>
+        ${s.top.map(t => `<tr><td>${esc(t.title)}</td><td>${t.n}</td></tr>`).join("")}</table></div>
+      <div class="panel"><h3>Books currently out</h3>${await loansTable(false)}</div>`;
+  },
+  async catalogue(q = "") {
+    const books = await get("/api/books?q=" + encodeURIComponent(q));
+    return `<h2>Catalogue</h2>
+      <div class="search"><input id="q" placeholder="Search title, author or subject…" value="${esc(q)}"></div>
+      <div class="shelf">${books.map(b => `
+        <div class="book"><div class="spine" style="background:${SPINES[b.category] || "#555"}"></div>
+          <div class="b"><span class="t">${esc(b.title)}</span><span class="a">${esc(b.authors)}</span>
+            <span style="font-size:13px">${esc(b.category)} · ${b.pub_year} · ${esc(b.publisher)}</span>
+            <div class="m"><span>₹${b.price}</span>
+              <span class="pill ${b.available ? "ok" : "no"}">${b.available}/${b.total_copies} on shelf</span></div>
+          </div></div>`).join("") || "<p>No books match.</p>"}</div>`;
+  },
+  async desk() {
+    const [members, books, staff] = await Promise.all([get("/api/members"), get("/api/books"), get("/api/staff")]);
+    const opt = (arr, v, l) => arr.map(x => `<option value="${x[v]}">${esc(l(x))}</option>`).join("");
+    return `<h2>Circulation Desk</h2>
+      <div class="panel"><h3>Issue a book</h3><div class="grid">
+        <div><label>Member</label><select id="im">${opt(members, "member_id", m => `${m.full_name} (${m.member_type})`)}</select></div>
+        <div><label>Title</label><select id="ib">${opt(books.filter(b => b.available), "isbn", b => b.title)}</select></div>
+        <div><label>Issued by</label><select id="is">${opt(staff, "staff_id", s => s.full_name)}</select></div>
+        <div><button class="btn" id="issue">Issue</button></div></div></div>
+      <div class="panel"><h3>Open loans: return</h3>${await loansTable(true)}</div>`;
+  },
+  async members() {
+    const ms = await get("/api/members");
+    return `<h2>Members</h2>
+      <div class="panel"><h3>Register a member</h3><div class="grid">
+        <div><label>Full name</label><input id="mn"></div><div><label>Email</label><input id="me"></div>
+        <div><label>Phone</label><input id="mp"></div>
+        <div><label>Type</label><select id="mt"><option>STUDENT</option><option>FACULTY</option><option>PUBLIC</option></select></div>
+        <div><button class="btn" id="addm">Register</button></div></div></div>
+      <div class="panel"><h3>All members (click for history)</h3><table>
+        <tr><th>Name</th><th>Type</th><th>Loans</th><th>Active</th><th>Unpaid fines</th></tr>
+        ${ms.map(m => `<tr class="click" data-m="${m.member_id}"><td>${esc(m.full_name)}</td><td>${m.member_type}</td>
+          <td>${m.total_loans}</td><td>${m.active_loans}</td>
+          <td class="${m.unpaid_fines ? "late" : ""}">${m.unpaid_fines ? "₹" + m.unpaid_fines : "-"}</td></tr>`).join("")}
+      </table></div><div id="detail"></div>`;
+  },
+  async insights(arg = {}) {
+    const isbn = arg.isbn || "9780078022159", day = arg.date || "2026-08-20";
+    const [d, books] = await Promise.all([get(`/api/insights?isbn=${isbn}&date=${day}`), get("/api/books")]);
+    const max = Math.max(1, ...d.popularity.map(p => p.times_borrowed));
+    return `<h2>Insights</h2>
+      <div class="panel"><h3>Popularity (materialised view, kept current by triggers)</h3><table>
+        <tr><th>Title</th><th>Borrowed</th><th></th><th>Last borrowed</th><th>Late days</th></tr>
+        ${d.popularity.map(p => `<tr><td>${esc(p.title)}</td><td>${p.times_borrowed}</td>
+          <td style="width:30%"><div style="height:10px;background:var(--gold);width:${100 * p.times_borrowed / max}%"></div></td>
+          <td>${p.last_borrowed || "-"}</td><td>${p.total_late_days}</td></tr>`).join("")}</table></div>
+      <div class="panel"><h3>Readers who borrowed this also borrowed…</h3>
+        <select id="rec">${books.map(b => `<option value="${b.isbn}" ${b.isbn === isbn ? "selected" : ""}>${esc(b.title)}</option>`).join("")}</select>
+        <table style="margin-top:12px"><tr><th>Recommended title</th><th>Shared readers</th></tr>
+        ${d.also.map(a => `<tr><td>${esc(a.title)}</td><td>${a.shared}</td></tr>`).join("") || "<tr><td colspan=2><i>No overlap yet</i></td></tr>"}</table></div>
+      <div class="panel"><h3>Time machine: what was out on a given day?</h3>
+        <input type="date" id="asof" value="${day}" style="max-width:220px">
+        <table style="margin-top:12px"><tr><th>Title</th><th>Borrower</th><th>Issued</th><th>Due</th></tr>
+        ${d.asof.map(r => `<tr><td>${esc(r.title)}</td><td>${esc(r.borrower)}</td><td>${r.issue_date}</td><td>${r.due_date}</td></tr>`).join("") || "<tr><td colspan=4><i>Nothing on loan that day</i></td></tr>"}</table></div>`;
+  },
+};
+
+async function loansTable(withReturn) {
+  const ls = await get("/api/loans");
+  return `<table><tr><th>Member</th><th>Title</th><th>Due</th><th>Status</th>${withReturn ? "<th></th>" : ""}</tr>
+    ${ls.map(l => `<tr><td>${esc(l.member)}</td><td>${esc(l.title)}</td><td>${l.due_date}</td>
+      <td class="${l.days_late > 0 ? "late" : ""}">${l.days_late > 0 ? l.days_late + " days late" : "on time"}</td>
+      ${withReturn ? `<td><button class="btn small" data-ret="${l.loan_id}">Return</button></td>` : ""}</tr>`).join("")}</table>`;
+}
+
+async function memberDetail(id) {
+  const {member: m, loans} = await get("/api/member?id=" + id);
+  const owes = loans.some(l => l.fine && !l.paid);
+  $("#detail").innerHTML = `<div class="panel"><h3>${esc(m.full_name)}: ${m.member_type}, limit ${m.max_books}</h3>
+    <p style="margin-top:0">${esc(m.email)} · joined ${m.join_date}
+    ${owes ? `<button class="btn small ghost" data-pay="${m.member_id}">Clear fines</button>` : ""}</p>
+    <table><tr><th>Title</th><th>Issued</th><th>Due</th><th>Returned</th><th>Fine</th></tr>
+    ${loans.map(l => `<tr><td>${esc(l.title)}</td><td>${l.issue_date}</td><td>${l.due_date}</td>
+      <td>${l.return_date || "<i>out</i>"}</td><td>${l.fine ? `₹${l.fine} ${l.paid ? "(paid)" : "<b class='late'>due</b>"}` : "-"}</td></tr>`).join("")}
+    </table></div>`;
+}
+
+let current = "home";
+async function show(v, arg) {
+  current = v;
+  document.querySelectorAll("aside button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  $("#view").innerHTML = await views[v](arg);
+  if (v === "catalogue") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length);
+    q.oninput = () => { clearTimeout(q._t); q._t = setTimeout(() => show("catalogue", q.value), 250); }; }
+}
+
+document.addEventListener("click", async e => {
+  const t = e.target;
+  if (t.closest("aside button")) return show(t.closest("aside button").dataset.v);
+  if (t.id === "issue" && await post("/api/issue", {member_id: $("#im").value, isbn: $("#ib").value, staff_id: $("#is").value})) show("desk");
+  if (t.dataset.ret && await post("/api/return", {loan_id: t.dataset.ret})) show("desk");
+  if (t.id === "addm" && await post("/api/members", {full_name: $("#mn").value, email: $("#me").value, phone: $("#mp").value, member_type: $("#mt").value})) show("members");
+  if (t.dataset.pay && await post("/api/pay", {member_id: t.dataset.pay})) { await show("members"); memberDetail(t.dataset.pay); }
+  if (t.id === "rec" || t.id === "asof") return;
+  const row = t.closest("tr[data-m]"); if (row) memberDetail(row.dataset.m);
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "rec" || e.target.id === "asof") show("insights", {isbn: $("#rec").value, date: $("#asof").value});
+});
+const start = location.hash.slice(1);
+show(views[start] ? start : "home");
+</script>
+</body>
+</html>
